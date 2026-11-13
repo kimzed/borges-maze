@@ -316,8 +316,8 @@ scene.add(you);
 
 // ---------- minimap: the rooms around you in the corner while walking, turning with you ----------
 // walls as thin lines over a see-through disc (the friend's Diablo 2 overlay map), doors are gaps,
-// rooms you have seen lighter, every room tinted with its region's colour, the nearest other
-// regions named in their direction (pulled in to the rim when farther); click it to open the map
+// rooms you have seen lighter, every room tinted with its region's colour, region names pinned
+// where the map has them; click it to open the map
 const mini = document.getElementById('mini'), mctx = mini.getContext('2d');
 const MINI_R = 40;                       // metres from your position to the rim (about 5 rooms)
 const miniEdges = [];                    // every wall once: [ax, az, bx, bz, door, room a, room b or -1]
@@ -328,27 +328,19 @@ for (const c of cells) for (let k = 0; k < 6; k++) {
   miniEdges.push([c.x + R * Math.cos(a0), c.z + R * Math.sin(a0), c.x + R * Math.cos(a1), c.z + R * Math.sin(a1),
                   !!(n && isDoor(c.i, n.i)), c.i, n ? n.i : -1]);
 }
-// the other regions, nearest first: the name sits on the region's nearest room (its glowing part,
-// where it has one), or on the rim in that direction when that room is out of view
-const regionCore = MAZE.regions.map((_, g) => {
-  const all = cells.filter(c => MAZE.region[c.i] === g), core = all.filter(c => MAZE.glow[c.i] > 0);
-  return core.length ? core : all;
-});
+// region names: each pinned to the same room as on the map (regionLabels), so a name stays put
+// and only turns with the map like the rooms; written upright, fading out near the rim
+// (Cédric, 2026-11-13: "the themes are moving instead of staying fixed")
 function miniRegionNames(g, q, s, k) {
-  const here = player.cell ? MAZE.region[player.cell.i] : -1;
-  const near = [];
-  regionCore.forEach((rooms, r) => {
-    if (r === here) return;
-    let best = null, bd = Infinity;
-    for (const c of rooms) { const d = Math.hypot(c.x - player.x, c.z - player.z); if (d < bd) { bd = d; best = c; } }
-    if (bd < 2.5 * MINI_R) near.push([bd, r, best]);
-  });
-  near.sort((a, b) => a[0] - b[0]);
   const fs = mini.clientWidth < 180 ? 10.5 : 12, lh = fs * 1.1, cs = Math.cos(player.yaw), sn = Math.sin(player.yaw);
+  const rimR = s / q - 2;
+  g.save();
+  g.beginPath(); g.arc(0, 0, rimR, 0, 2 * Math.PI); g.clip();
   g.font = `italic 600 ${fs}px "EB Garamond", Georgia, "DejaVu Serif", serif`;
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  const boxes = [];
-  for (const [d, r, c] of near.slice(0, 4)) {
+  regionLabels.forEach(({ v }, r) => {
+    const dx = v.x - player.x, dz = v.z - player.z;
+    const x = (dx * cs - dz * sn) * k / q, y = (dx * sn + dz * cs) * k / q;
     // two lines when the name is long
     const name = MAZE.regions[r], words = name.split(' ');
     let lines = [name];
@@ -360,24 +352,19 @@ function miniRegionNames(g, q, s, k) {
       }
       lines = [words.slice(0, cut).join(' '), words.slice(cut).join(' ')];
     }
+    // fades out as its far corner nears the rim, so a name is never cut by the edge
     const w = Math.max(...lines.map(l => g.measureText(l).width)), h = lines.length * lh;
-    // position on the screen (css px from the centre), turned with you like the rooms
-    const dx = c.x - player.x, dz = c.z - player.z;
-    let x = (dx * cs - dz * sn) * k / q, y = (dx * sn + dz * cs) * k / q;
-    const rim = s / q - Math.hypot(w / 2, h / 2) - 4, m = Math.hypot(x, y);
-    if (m > rim) { x *= rim / m; y *= rim / m; }
-    // not on your arrow: a name too close to the middle moves out along its direction
-    const keep = 10 + Math.abs(y) / Math.max(m, 1e-6) * h / 2 + Math.abs(x) / Math.max(m, 1e-6) * w / 2;
-    if (m < keep) { const ux = m > 1e-6 ? x / m : 0, uy = m > 1e-6 ? y / m : -1; x = ux * keep; y = uy * keep; }
-    const box = [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
-    if (boxes.some(b => b[0] < box[2] && box[0] < b[2] && b[1] < box[3] && box[1] < b[3])) continue;
-    boxes.push(box);
+    const far = Math.hypot(Math.abs(x) + w / 2, Math.abs(y) + h / 2);
+    const fade = Math.max(0, Math.min(1, (rimR + 3 - far) / 10));
+    if (!fade) return;
+    g.globalAlpha = fade;
     lines.forEach((l, j) => {
-      const ly = y - h / 2 + lh * (j + 0.5);
+      const ly = y - lines.length * lh / 2 + lh * (j + 0.5);
       g.lineWidth = 3; g.strokeStyle = 'rgba(13, 11, 9, .85)'; g.strokeText(l, x, ly);
       g.fillStyle = `hsl(${regionHue(r)}, 70%, 82%)`; g.fillText(l, x, ly);
     });
-  }
+  });
+  g.restore();
 }
 function drawMini() {
   const css = mini.clientWidth, q = Math.min(devicePixelRatio, 2), px = Math.round(css * q);
@@ -414,11 +401,12 @@ function drawMini() {
   g.strokeStyle = 'rgba(236, 228, 214, .6)'; g.stroke(dim);
   g.strokeStyle = 'rgba(236, 228, 214, .9)'; g.stroke(lit);
   g.restore();
-  // you: the map's arrow, always pointing up
   g.setTransform(q, 0, 0, q, s, s);
-  g.beginPath(); g.moveTo(0, -6.5); g.lineTo(4.5, 5); g.lineTo(0, 2.5); g.lineTo(-4.5, 5); g.closePath();
-  g.fillStyle = '#fff'; g.fill();
   miniRegionNames(g, q, s, k);
+  // you: the map's arrow, always pointing up, over the names
+  g.beginPath(); g.moveTo(0, -6.5); g.lineTo(4.5, 5); g.lineTo(0, 2.5); g.lineTo(-4.5, 5); g.closePath();
+  g.lineWidth = 2; g.strokeStyle = 'rgba(13, 11, 9, .85)'; g.stroke();
+  g.fillStyle = '#fff'; g.fill();
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.beginPath(); g.arc(s, s, s - q, 0, 2 * Math.PI);
   g.lineWidth = q; g.strokeStyle = 'rgba(236, 228, 214, .3)'; g.stroke();
