@@ -35,7 +35,7 @@
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .45s; }
   #mini { position: fixed; top: 62px; right: 16px; width: 220px; height: 220px; cursor: pointer; }
   #mini[hidden] { display: none; }
-  @media (max-width: 600px) { #mini { width: 150px; height: 150px; } }
+  @media (max-width: 600px), (max-height: 500px) { #mini { width: 150px; height: 150px; } }
   #stick { position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%;
     border: 1px solid var(--line); display: none; pointer-events: none; }
   #stick i { position: absolute; left: 36px; top: 36px; width: 40px; height: 40px; border-radius: 50%; background: var(--line); }
@@ -381,7 +381,8 @@ function miniRegionNames(g, q, s, k) {
 }
 function drawMini() {
   const css = mini.clientWidth, q = Math.min(devicePixelRatio, 2), px = Math.round(css * q);
-  if (mini.width !== px) mini.width = mini.height = px;
+  // both sides: a new canvas is 300 x 150, so on a 150 px phone disc (x 2) only the height was wrong
+  if (mini.width !== px || mini.height !== px) { mini.width = px; mini.height = px; }
   const g = mctx, s = px / 2, k = (s - q) / MINI_R, far = (MINI_R + D) ** 2;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, px, px);
